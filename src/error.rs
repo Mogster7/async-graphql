@@ -179,14 +179,17 @@ pub type ServerResult<T> = std::result::Result<T, ServerError>;
 #[derive(Debug)]
 pub struct InputValueError<T> {
     message: String,
+    /// Optional extensions for additional error context
+    pub extensions: Option<ErrorExtensionValues>,
     phantom: PhantomData<T>,
 }
 
 impl<T: InputType> InputValueError<T> {
-    fn new(message: String) -> Self {
+    fn new(message: String, extensions: Option<ErrorExtensionValues>) -> Self {
         Self {
             message,
-            phantom: PhantomData,
+            extensions,
+            phantom: PhantomData
         }
     }
 
@@ -197,7 +200,7 @@ impl<T: InputType> InputValueError<T> {
             r#"Expected input type "{}", found {}."#,
             T::type_name(),
             actual
-        ))
+        ), None)
     }
 
     /// A custom error message.
@@ -206,8 +209,12 @@ impl<T: InputType> InputValueError<T> {
     /// you use the `?` operator.
     #[must_use]
     pub fn custom(msg: impl Display) -> Self {
-        Self::new(format!(r#"Failed to parse "{}": {}"#, T::type_name(), msg))
+        Self::new(
+            format!(r#"Failed to parse "{}": {}"#, T::type_name(), msg),
+            None
+        )
     }
+
 
     /// Propagate the error message to a different type.
     pub fn propagate<U: InputType>(self) -> InputValueError<U> {
@@ -216,15 +223,17 @@ impl<T: InputType> InputValueError<T> {
                 r#"{} (occurred while parsing "{}")"#,
                 self.message,
                 U::type_name()
-            ))
+            ), self.extensions)
         } else {
-            InputValueError::new(self.message)
+            InputValueError::new(self.message, self.extensions)
         }
     }
 
     /// Convert the error into a server error.
     pub fn into_server_error(self, pos: Pos) -> ServerError {
-        ServerError::new(self.message, Some(pos))
+        let mut server_error = ServerError::new(self.message, Some(pos));
+        server_error.extensions = self.extensions;
+        server_error
     }
 }
 
